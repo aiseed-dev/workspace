@@ -59,12 +59,14 @@ curl -H 'Authorization: Bearer tok1' http://127.0.0.1:8400/api/me
 
 ## 実装の現在地（spec 8 章の実装順序）
 
-- [x] 2. ファイルと権限（xattr・原子性・パス安全・共有リンク）
+- [x] 1. 認証 — PocketBase 0.36 実機で結合確認済み（kura init の PB 連携、
+      auth-with-password → auth-refresh introspection → API フルスタック）
+- [x] 2. ファイルと権限（xattr・原子性・パス安全・共有リンク）。
+      実機検証は `kura fscheck` で実行（ext4 既定で 212 グループ/ディレクトリ、
+      超過は原子的、tar --xattrs 保全 OK——spec 7 章に記録）
 - [x] 3. API の口（トークン検証は差し替え式、標準は PocketBase introspection + キャッシュ）
-- [ ] 1. 認証 — PocketBase の実機での結合確認（kura init の PB 連携、auth-refresh の検証）
-- [ ] 4. ファイル共有のフロント（Flet）
-- [ ] 5. ONLYOFFICE Docs 連携
+- [ ] 4. ファイル共有のフロント（Flet 0.85 系・宣言的スタイル）
+- [ ] 5. ONLYOFFICE Docs 連携（JWT・保存コールバック・document key）
 - [ ] 6. カレンダー（.ics + ICS 購読フィード）
 
-実機での検証項目（spec 7 章）：ext4 の xattr 実効上限の実測、rsync -X / tar --xattrs での保全、
-PocketBase 実物との結合。
+バックアップは `scripts/backup.sh`（xattr を落とさない tar、PB データ込み）。

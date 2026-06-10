@@ -87,6 +87,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fscheck(args: argparse.Namespace) -> int:
+    from .fscheck import report
+
+    return report(Path(args.data_root))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kura",
                                      description="蔵 (aiseed workspace)")
@@ -118,6 +124,11 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--static-tokens", default=env("KURA_STATIC_TOKENS"),
                          help="開発用：トークン → 利用者の JSON ファイル")
     p_serve.set_defaults(func=cmd_serve)
+
+    p_check = sub.add_parser(
+        "fscheck", help="実機検証：xattr 上限・超過時の原子性・バックアップ保全")
+    p_check.add_argument("--data-root", default=env("KURA_DATA_ROOT", "/srv/workspace"))
+    p_check.set_defaults(func=cmd_fscheck)
 
     args = parser.parse_args(argv)
     return args.func(args)
