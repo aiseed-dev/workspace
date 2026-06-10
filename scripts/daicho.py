@@ -1,47 +1,29 @@
 #!/usr/bin/env python3
-"""台帳 — ソフトウェア管理台帳のランチャー（自分用の Flet アプリ）。
+"""台帳ランチャー — チートシート（markdown）を直接読んで、即引く。
 
-エディタやブラウザで目的のページに辿り着く時間をゼロにする：
-起動 → 打つ → Enter → コピーされて閉じる。URL なら開く。
+自前の台帳ファイルは持たない。手で写した台帳は必ず腐る——正は一つ
+（docs/cheatsheet.md）にして、保存してある場所を直接見る。
 
-- 台帳の正体はただの JSON（~/.config/aiseed/daicho.json）。手で編集してよい
-- 行の形：{"name": 名前, "category": 分類, "value": コマンドか URL, "note": 補足}
-- value が http で始まれば「開く」、それ以外は「クリップボードへコピー」
-- 検索は名前・分類・中身の部分一致。Enter は先頭の一件に効く
+読み方：
+- ```sh ブロック：直前の「# コメント」を名前、次の行をコマンドとして拾う
+- 表（| 名前 | 値 |）：場所と値の行をそのまま拾う
+- 見出し（##）を分類にする
 
-起動: python3 daicho.py          # デスクトップの窓
-      python3 daicho.py --web    # ブラウザ表示（窓が出せない環境用）
+使い方：起動 → 打って絞る → Enter で先頭をコピー（URL は開く）。
+    python3 daicho.py            # デスクトップの窓
+    python3 daicho.py --web      # ブラウザ表示（窓が出せない環境用）
+    python3 daicho.py 追加.md …  # 他の markdown も読ませる
 """
 
 import argparse
-import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
-DATA_FILE = Path.home() / ".config" / "aiseed" / "daicho.json"
-
-SAMPLE = [
-    {"name": "サイト更新 aiseed.dev", "category": "deploy",
-     "value": "cd ~/sites/aiseed.dev && python3 deploy.py"},
-    {"name": "サイト更新 timej.net", "category": "deploy",
-     "value": "cd ~/sites/timej.net && python3 deploy.py"},
-    {"name": "蔵を開く", "category": "url", "value": "https://kura.aiseed.dev"},
-    {"name": "Cloudflare ダッシュボード", "category": "url",
-     "value": "https://dash.cloudflare.com"},
-    {"name": "蔵 サービス状態", "category": "server",
-     "value": "systemctl status pocketbase kura-api kura-front"},
-    {"name": "蔵 API ログ", "category": "server",
-     "value": "journalctl -u kura-api -e"},
-    {"name": "バックアップ復元（xattr ごと）", "category": "server",
-     "value": "tar --xattrs --xattrs-include='user.*' -xzf workspace-日付.tar.gz",
-     "note": "--xattrs を忘れると権限が全部消える"},
-    {"name": "権限を直接見る", "category": "server",
-     "value": "getfattr -n user.ws.perm -d /srv/workspace/対象"},
-    {"name": "Cloudflare トークンの場所", "category": "場所",
-     "value": "~/.config/cloudflare/pages.env"},
-]
+# 既定の正：このスクリプトと同じリポジトリの docs/cheatsheet.md
+DEFAULT_SOURCES = [Path(__file__).resolve().parent.parent / "docs" / "cheatsheet.md"]
 
 
 def _bootstrap() -> None:
@@ -69,26 +51,74 @@ _bootstrap()
 import flet as ft  # noqa: E402
 
 
-def load_entries() -> list[dict]:
-    if not DATA_FILE.is_file():
-        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-        DATA_FILE.write_text(
-            json.dumps(SAMPLE, ensure_ascii=False, indent=1), encoding="utf-8")
-        print(f"台帳を作った: {DATA_FILE}（中身は手で編集してよい）")
-    return json.loads(DATA_FILE.read_text(encoding="utf-8"))
+def parse_markdown(text: str, source: str) -> list[dict]:
+    """markdown からコマンド・値の行を拾う。"""
+    entries: list[dict] = []
+    category = ""
+    comment = ""
+    in_code = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            comment = ""
+            continue
+        if in_code:
+            if stripped.startswith("#"):
+                # ブロックコメントは小見出し。空行か次のコメントまで後続行に効く
+                comment = stripped.lstrip("#").strip()
+            elif stripped:
+                # 行末コメント（コマンド  # 説明）は名前に回し、コピーする値から外す
+                parts = re.split(r"\s{2,}#\s*", stripped, maxsplit=1)
+                command = parts[0].strip()
+                inline = parts[1].strip() if len(parts) > 1 else ""
+                entries.append({
+                    "name": inline or comment or command,
+                    "category": category,
+                    "value": command,
+                    "source": source,
+                })
+            else:
+                comment = ""
+            continue
+        if stripped.startswith("#"):
+            category = stripped.lstrip("#").strip()
+            continue
+        # 表の行（| 名前 | 値 |）。見出し・罫線は除外
+        if stripped.startswith("|"):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if len(cells) >= 2 and cells[0] and cells[1] \
+                    and not set(cells[1]) <= {"-", ":", " "}:
+                value = re.sub(r"`([^`]*)`", r"\1", cells[1])
+                name = re.sub(r"[*`]", "", cells[0])
+                if name not in ("何", "やりたいこと"):  # 表のヘッダ行
+                    entries.append({"name": name, "category": category,
+                                    "value": value, "source": source})
+    return entries
+
+
+def load_entries(sources: list[Path]) -> list[dict]:
+    entries: list[dict] = []
+    for path in sources:
+        if path.is_file():
+            entries += parse_markdown(
+                path.read_text(encoding="utf-8"), path.name)
+        else:
+            print(f"注意: 見つからない: {path}", file=sys.stderr)
+    return entries
 
 
 def matches(entry: dict, q: str) -> bool:
-    hay = " ".join([entry.get("name", ""), entry.get("category", ""),
-                    entry.get("value", ""), entry.get("note", "")]).lower()
+    hay = " ".join([entry["name"], entry["category"], entry["value"]]).lower()
     return all(w in hay for w in q.lower().split())
 
 
 @ft.component
-def Daicho():
+def Daicho(sources: tuple):
     query, set_query = ft.use_state("")
     flash, set_flash = ft.use_state("")
-    entries = load_entries()
+    # 毎描画で読み直す——正（チートシート）の更新が即反映される
+    entries = load_entries(list(sources))
     hits = [e for e in entries if matches(e, query)] if query else entries
 
     page = ft.context.page
@@ -109,9 +139,7 @@ def Daicho():
     tiles = [
         ft.ListTile(
             title=ft.Text(e["name"]),
-            subtitle=ft.Text(
-                f"[{e.get('category', '')}] {e['value']}"
-                + (f"  ※{e['note']}" if e.get("note") else "")),
+            subtitle=ft.Text(f"[{e['category']}] {e['value']}"),
             on_click=lambda _, e=e: act(e),
         )
         for e in hits[:30]
@@ -124,22 +152,24 @@ def Daicho():
                          on_submit=on_submit),
             ft.Text(flash, color=ft.Colors.GREEN),
             *tiles,
-            ft.Text(f"台帳: {DATA_FILE}", size=11, color=ft.Colors.GREY),
+            ft.Text("正: " + ", ".join(str(s) for s in sources),
+                    size=11, color=ft.Colors.GREY),
         ],
         scroll=ft.ScrollMode.AUTO, expand=True,
     )
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="ソフトウェア管理台帳ランチャー")
+    ap = argparse.ArgumentParser(description="チートシートを直接引くランチャー")
+    ap.add_argument("extra", nargs="*", help="追加で読む markdown")
     ap.add_argument("--web", action="store_true", help="ブラウザ表示で起動")
     ap.add_argument("--port", type=int, default=8765)
     args = ap.parse_args()
-    load_entries()  # 初回起動でも台帳ファイルを先に作っておく
+    sources = DEFAULT_SOURCES + [Path(p) for p in args.extra]
 
     def app(page: ft.Page):
         page.title = "台帳"
-        page.render(Daicho)
+        page.render(Daicho, tuple(sources))
 
     if args.web:
         ft.run(app, view=None, port=args.port)
