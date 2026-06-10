@@ -12,6 +12,38 @@ import httpx
 from .base import Identity
 
 
+def login(
+    base_url: str,
+    email: str,
+    password: str,
+    collection: str = "users",
+    client: httpx.Client | None = None,
+) -> tuple[str, Identity] | None:
+    """メール + パスワードで PB にログインし (トークン, Identity) を返す。失敗は None。
+    フロント（Flet）が使う。トークンは以後の検証・API 呼び出しに使える。"""
+    own = client is None
+    client = client or httpx.Client(timeout=10.0)
+    try:
+        resp = client.post(
+            f"{base_url.rstrip('/')}/api/collections/{collection}/auth-with-password",
+            json={"identity": email, "password": password},
+        )
+    except httpx.HTTPError:
+        return None
+    finally:
+        if own:
+            client.close()
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    record = data.get("record", {})
+    return data["token"], Identity(
+        user_id=record.get("id", ""),
+        display_name=record.get("name") or record.get("email", ""),
+        email=record.get("email", ""),
+    )
+
+
 class PocketBaseVerifier:
     def __init__(
         self,

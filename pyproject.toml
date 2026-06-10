@@ -11,6 +11,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# 配布物はテスト済みバージョンに固定（spec 4.5）。開発では最新安定版に追随して更新する
+front = ["flet==0.85.3"]
 
 [project.scripts]
 kura = "kura.cli:main"

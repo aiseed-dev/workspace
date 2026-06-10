@@ -1,6 +1,6 @@
 import httpx
 
-from kura.auth.pocketbase import PocketBaseVerifier
+from kura.auth.pocketbase import PocketBaseVerifier, login
 
 
 def make_verifier(handler, ttl=60.0):
@@ -55,3 +55,20 @@ def test_pb_unreachable():
 
     v = make_verifier(handler)
     assert v.verify("tok") is None
+
+
+def test_login():
+    def handler(request):
+        assert request.url.path == "/api/collections/users/auth-with-password"
+        return httpx.Response(200, json={"token": "tok", "record": {
+            "id": "u_1", "name": "山田", "email": "y@example.jp"}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    token, identity = login("http://pb.local", "y@example.jp", "pw", client=client)
+    assert token == "tok" and identity.user_id == "u_1"
+
+
+def test_login_failure():
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(400, json={})))
+    assert login("http://pb.local", "y@example.jp", "bad", client=client) is None

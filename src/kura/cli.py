@@ -87,6 +87,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_front(args: argparse.Namespace) -> int:
+    from .front.app import run
+
+    run(args.data_root, args.pb_url, host=args.host, port=args.port)
+    return 0
+
+
 def cmd_fscheck(args: argparse.Namespace) -> int:
     from .fscheck import report
 
@@ -129,6 +136,13 @@ def main(argv: list[str] | None = None) -> int:
         "fscheck", help="実機検証：xattr 上限・超過時の原子性・バックアップ保全")
     p_check.add_argument("--data-root", default=env("KURA_DATA_ROOT", "/srv/workspace"))
     p_check.set_defaults(func=cmd_fscheck)
+
+    p_front = sub.add_parser("front", help="Flet のフロントを起動")
+    p_front.add_argument("--data-root", default=env("KURA_DATA_ROOT", "/srv/workspace"))
+    p_front.add_argument("--host", default=env("KURA_HOST", "127.0.0.1"))
+    p_front.add_argument("--port", type=int, default=int(env("KURA_FRONT_PORT", "8500")))
+    p_front.add_argument("--pb-url", default=env("KURA_PB_URL", "http://127.0.0.1:8090"))
+    p_front.set_defaults(func=cmd_front)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -22,7 +22,8 @@ src/kura/
     pocketbase.py  標準実装：introspection + 短 TTL キャッシュ
     static.py      固定トークン（テスト・開発用）
   api/       連携の口（FastAPI）
-  cli.py     kura init（ブートストラップ）/ kura serve
+  front/     フロント（Flet・宣言的スタイル。エンジンを直接 import、判定はエンジン）
+  cli.py     kura init / kura serve / kura front / kura fscheck
 ```
 
 ## ブートストラップ（spec 6 章）
@@ -65,7 +66,10 @@ curl -H 'Authorization: Bearer tok1' http://127.0.0.1:8400/api/me
       実機検証は `kura fscheck` で実行（ext4 既定で 212 グループ/ディレクトリ、
       超過は原子的、tar --xattrs 保全 OK——spec 7 章に記録）
 - [x] 3. API の口（トークン検証は差し替え式、標準は PocketBase introspection + キャッシュ）
-- [ ] 4. ファイル共有のフロント（Flet 0.85 系・宣言的スタイル）
+- [~] 4. フロントの骨格（Flet 0.85.3・宣言的スタイル）：ログイン → 入口一覧 →
+      フォルダ閲覧・作成。`kura front` で起動（`pip install -e '.[front]'`）。
+      起動と配信は実機確認済み、ブラウザでの対話確認はこれから。
+      アップロード・ダウンロード・共有・招待の UI は未実装
 - [ ] 5. ONLYOFFICE Docs 連携（JWT・保存コールバック・document key）
 - [x] 6. カレンダーのバックエンド（イベント＝.ics は既存のファイル API で読み書き、
       購読フィード `/feed/{token}.ics` は共有リンクに畳んだ認可）。予定の UI は 4. と一緒に
