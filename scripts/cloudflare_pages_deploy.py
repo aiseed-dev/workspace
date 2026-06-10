@@ -27,6 +27,18 @@ from blake3 import blake3
 API = "https://api.cloudflare.com/client/v4"
 MAX_FILE_SIZE = 25 * 1024 * 1024  # Pages の 1 ファイル上限（25MiB）
 BATCH_BYTES = 30 * 1024 * 1024  # 1 回のアップロード呼び出しの目安
+ENV_FILE = Path.home() / ".config" / "cloudflare" / "pages.env"
+
+
+def load_env_file(path: Path = ENV_FILE) -> None:
+    """KEY=VALUE 形式の env ファイルを読む（既に環境変数があればそちらを優先）。"""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip())
 
 
 def file_hash(data: bytes, suffix: str) -> str:
@@ -130,22 +142,19 @@ def upload_assets(token: str, by_hash: dict[str, Path]) -> None:
                    json={"hashes": list(by_hash)}))
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Cloudflare Pages 直接アップロード")
-    ap.add_argument("directory", help="公開ディレクトリ（この中身がサイトになる）")
-    ap.add_argument("--project", required=True, help="Pages プロジェクト名")
-    ap.add_argument("--branch", default="main",
-                    help="main = 本番、それ以外はプレビュー URL")
-    ap.add_argument("--create", action="store_true",
-                    help="プロジェクトがなければ作る")
-    args = ap.parse_args()
-
+def deploy(directory: str | Path, project: str, branch: str = "main",
+           create: bool = True) -> str:
+    """ディレクトリを Pages プロジェクトへデプロイし、URL を返す。
+    サイトごとの deploy.py からはこれを import して呼ぶ。
+    トークンは環境変数 → ~/.config/cloudflare/pages.env の順で読む。"""
+    load_env_file()
     token = os.environ.get("CLOUDFLARE_API_TOKEN")
     account = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
     if not token or not account:
-        sys.exit("CLOUDFLARE_API_TOKEN と CLOUDFLARE_ACCOUNT_ID を環境変数に設定すること")
+        sys.exit("CLOUDFLARE_API_TOKEN と CLOUDFLARE_ACCOUNT_ID を"
+                 f"環境変数か {ENV_FILE} に設定すること")
 
-    root = Path(args.directory)
+    root = Path(directory)
     if not root.is_dir():
         sys.exit(f"エラー: ディレクトリがない: {root}")
 
@@ -159,16 +168,31 @@ def main() -> None:
     print(f"{len(files)} ファイル（一意 {len(by_hash)}）")
 
     pages = Pages(account, token)
-    if not pages.project_exists(args.project):
-        if args.create:
-            pages.create_project(args.project)
+    if not pages.project_exists(project):
+        if create:
+            pages.create_project(project)
         else:
-            sys.exit(f"プロジェクトがない: {args.project}（--create で作成）")
+            sys.exit(f"プロジェクトがない: {project}")
 
-    jwt = pages.upload_token(args.project)
+    jwt = pages.upload_token(project)
     upload_assets(jwt, by_hash)
-    result = pages.deploy(args.project, manifest, args.branch)
-    print(f"デプロイ完了: {result.get('url', '(URL 不明)')}")
+    result = pages.deploy(project, manifest, branch)
+    url = result.get("url", "(URL 不明)")
+    print(f"デプロイ完了: {url}")
+    return url
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Cloudflare Pages 直接アップロード")
+    ap.add_argument("directory", help="公開ディレクトリ（この中身がサイトになる）")
+    ap.add_argument("--project", required=True, help="Pages プロジェクト名")
+    ap.add_argument("--branch", default="main",
+                    help="main = 本番、それ以外はプレビュー URL")
+    ap.add_argument("--no-create", action="store_true",
+                    help="プロジェクトがないときに作らずエラーにする")
+    args = ap.parse_args()
+    deploy(args.directory, args.project, branch=args.branch,
+           create=not args.no_create)
 
 
 if __name__ == "__main__":
