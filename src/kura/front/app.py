@@ -49,7 +49,37 @@ def LoginView(pb_url: str, on_login):
 
 
 @ft.component
-def EntriesView(engine: Engine, identity: Identity, on_open):
+def HelpView(is_admin: bool, on_back):
+    """使い方の早見表。やり方を探す場所をアプリの中に置く（docs/runbook.md の利用者版）。"""
+    sections: list[ft.Control] = [
+        ft.FilledButton(content=ft.Text("戻る"), on_click=lambda _: on_back()),
+        ft.Text("使い方", size=24, weight=ft.FontWeight.BOLD),
+        ft.Text("入口", size=18, weight=ft.FontWeight.BOLD),
+        ft.Text("「自分の入口」は、あなたが見られる場所の一覧。"
+                "上の階層が見えなくても、権限のある場所はここに必ず出る。"),
+        ft.Text("権限", size=18, weight=ft.FontWeight.BOLD),
+        ft.Text("r = 閲覧（読める・ダウンロードできる）\n"
+                "w = 編集（書ける・作れる・消せる）\n"
+                "a = 管理（フォルダを作り、グループに権限を割り当て、共有を出せる）"),
+        ft.Text("権限はフォルダごと。権限のない子フォルダは、名前ごと見えない。"
+                "見えるはずの場所が見えないときは、管理者にグループの所属を確認。"),
+        ft.Text("ファイル", size=18, weight=ft.FontWeight.BOLD),
+        ft.Text("フォルダ内のファイルは、そのフォルダの権限に従う。"
+                "新しいフォルダを作れるのは、その場所に a を持つ人だけ。"),
+    ]
+    if is_admin:
+        sections += [
+            ft.Text("管理者向け", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text("グループの作成・所属と権限の割り当ては API から行う"
+                    "（画面は今後追加）。サーバーの運用・バックアップ・復元は"
+                    " docs/runbook.md（作業台帳）を参照。"),
+        ]
+    return ft.Column(controls=sections, scroll=ft.ScrollMode.AUTO,
+                     expand=True, spacing=12)
+
+
+@ft.component
+def EntriesView(engine: Engine, identity: Identity, on_open, on_help):
     entries = engine.entry_points(identity.user_id)
     tiles = [
         ft.ListTile(
@@ -63,7 +93,14 @@ def EntriesView(engine: Engine, identity: Identity, on_open):
     if not tiles:
         tiles = [ft.ListTile(title=ft.Text("見える場所がまだない。管理者に共有を頼んで"))]
     return ft.Column(
-        controls=[ft.Text("自分の入口", size=20, weight=ft.FontWeight.BOLD), *tiles],
+        controls=[
+            ft.Row(controls=[
+                ft.Text("自分の入口", size=20, weight=ft.FontWeight.BOLD),
+                ft.TextButton(content=ft.Text("使い方"),
+                              on_click=lambda _: on_help()),
+            ]),
+            *tiles,
+        ],
         scroll=ft.ScrollMode.AUTO,
         expand=True,
     )
@@ -132,11 +169,16 @@ def App(engine: Engine, pb_url: str):
     identity, set_identity = ft.use_state(None)
     # None = 入口一覧、文字列 = そのパスを閲覧中
     path, set_path = ft.use_state(None)
+    show_help, set_show_help = ft.use_state(False)
 
     if identity is None:
         return LoginView(pb_url, on_login=set_identity)
+    if show_help:
+        return HelpView(engine.groups.is_admin(identity.user_id),
+                        on_back=lambda: set_show_help(False))
     if path is None:
-        return EntriesView(engine, identity, on_open=set_path)
+        return EntriesView(engine, identity, on_open=set_path,
+                           on_help=lambda: set_show_help(True))
     return DirView(engine, identity, path,
                    on_open=set_path, on_entries=lambda: set_path(None))
 
