@@ -21,13 +21,13 @@ DNS の切り替え自体は数分で済む（ネームサーバーが既に Clo
 
 ## 1. 準備（一度だけ）
 
-npm は使わない。必要なのは Python と pip パッケージ二つ、それに API トークン：
+npm は使わない。**pip も venv も手で触らない**——デプロイスクリプトが初回起動時に
+自分の隣へ `.venv` を作り、必要な二つのパッケージ（httpx・blake3）を入れて使う。
+（いまの Debian/Ubuntu はシステムの pip へ直接インストールできない仕様
+〔externally-managed-environment〕なので、ここが普通の人の最初の壁になる。
+壁ごとスクリプトに埋めてある。`.venv` は **.gitignore に入れること**。）
 
-```sh
-pip install httpx blake3
-```
-
-API トークンの作成（ブラウザで一度だけ）：
+必要な準備は API トークンだけ（ブラウザで一度だけ）：
 
 1. Cloudflare ダッシュボード → 右上のプロフィール → **My Profile → API Tokens → Create Token**
 2. テンプレート **「Cloudflare Pages を編集する（Edit Cloudflare Pages）」** を選んで作成
