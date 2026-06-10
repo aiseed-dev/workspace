@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""台帳ランチャー — チートシート（markdown）を直接読んで、即引く。
+"""台帳ランチャー — 運用台帳（docs/runbook.md）を直接読んで、即引く。
 
-自前の台帳ファイルは持たない。手で写した台帳は必ず腐る——正は一つ
-（docs/cheatsheet.md）にして、保存してある場所を直接見る。
+写しの台帳は持たない。手で写した台帳は必ず腐る——運用の書き場所は
+runbook 一つにして、保存してある場所を直接見る。
 
 読み方：
 - ```sh ブロック：直前の「# コメント」を名前、次の行をコマンドとして拾う
@@ -22,8 +22,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-# 既定の正：このスクリプトと同じリポジトリの docs/cheatsheet.md
-DEFAULT_SOURCES = [Path(__file__).resolve().parent.parent / "docs" / "cheatsheet.md"]
+# 既定の正：このスクリプトと同じリポジトリの docs/runbook.md
+DEFAULT_SOURCES = [Path(__file__).resolve().parent.parent / "docs" / "runbook.md"]
 
 
 def _bootstrap() -> None:
@@ -84,16 +84,17 @@ def parse_markdown(text: str, source: str) -> list[dict]:
         if stripped.startswith("#"):
             category = stripped.lstrip("#").strip()
             continue
-        # 表の行（| 名前 | 値 |）。見出し・罫線は除外
+        # 表の行：バッククォート入りのセルを探し、最初のコード片を値にする
         if stripped.startswith("|"):
             cells = [c.strip() for c in stripped.strip("|").split("|")]
-            if len(cells) >= 2 and cells[0] and cells[1] \
-                    and not set(cells[1]) <= {"-", ":", " "}:
-                value = re.sub(r"`([^`]*)`", r"\1", cells[1])
-                name = re.sub(r"[*`]", "", cells[0])
-                if name not in ("何", "やりたいこと"):  # 表のヘッダ行
-                    entries.append({"name": name, "category": category,
-                                    "value": value, "source": source})
+            name = re.sub(r"[*`]", "", cells[0]) if cells else ""
+            if len(cells) >= 2 and name and name not in ("何", "やりたいこと"):
+                for cell in cells[1:]:
+                    codes = re.findall(r"`([^`]+)`", cell)
+                    if codes:
+                        entries.append({"name": name, "category": category,
+                                        "value": codes[0], "source": source})
+                        break
     return entries
 
 
