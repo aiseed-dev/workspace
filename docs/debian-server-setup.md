@@ -15,7 +15,9 @@ Ubuntu 24.04 のサーバーを Debian にクリーンインストールし、�
 - リバースプロキシは **Caddy**（証明書の取得・更新が自動で設定 2 行。最小依存）
 - PocketBase は **localhost のみ**で待ち受け、外に出さない（ログインも検証も
   サーバー側 Python が叩くため、外部公開が不要）
-- 公開するポートは **80/443（Caddy）と SSH だけ**
+- インターネットに公開するポートは **80/443（Caddy）だけ**。SSH は LAN からのみ
+  （外から管理が要るようになったら、管理者専用に WireGuard / Tailscale を足す。
+  利用者に VPN を求めない方針と矛盾しない——使うのは管理者一人）
 
 ```
 インターネット ──443──▶ Caddy（TLS 終端）
@@ -51,8 +53,11 @@ ls /var/www /home /etc/nginx/sites-enabled
 ```sh
 apt update && apt install -y caddy python3-venv rsync curl unzip ufw unattended-upgrades
 
-# ファイアウォール：SSH と HTTP/HTTPS だけ
-ufw allow OpenSSH && ufw allow 80,443/tcp && ufw enable
+# ファイアウォール：HTTP/HTTPS は全開、SSH は LAN からのみ
+# （LAN のサブネットは自分の環境に読み替え。ip a で確認）
+ufw allow 80,443/tcp
+ufw allow from 192.168.1.0/24 to any port 22 proto tcp
+ufw enable
 
 # 自動セキュリティ更新
 dpkg-reconfigure -plow unattended-upgrades
@@ -185,8 +190,10 @@ systemctl reload caddy
 curl -sI https://kura.aiseed.dev | head -3
 ```
 
-ルーターで 80/443 をこのサーバーへポートフォワードしておくこと
-（80 は証明書の取得・更新と HTTPS への転送に使う）。
+ルーターで 80/443 **だけ**をこのサーバーへポートフォワードしておくこと
+（80 は証明書の取得・更新と HTTPS への転送に使う）。**22（SSH）は転送しない**——
+管理は LAN から。外から管理したくなったら、SSH を公開するのではなく
+管理者専用の WireGuard / Tailscale を入れる。
 
 ## 9. バックアップ（毎日）
 
@@ -213,7 +220,9 @@ xattr はアーカイブ内に保全済みなので、tar.gz の転送は普通�
 
 - [ ] `https://kura.aiseed.dev` でログイン画面が出て、管理者でログインできる
 - [ ] `kura fscheck` が全項目 OK
-- [ ] `ufw status` が 22/80/443 のみ
+- [ ] `ufw status` が 80/443（全開）と 22（LAN のみ）になっている
+- [ ] **外から 22 に届かない**（LAN 外から `ssh 公開IP` がタイムアウトする。
+      ルーターで 22 を転送していないこと）
 - [ ] PB（8090）・API（8400）・front（8500）が外から直接見えない（`nmap` か `curl 公開IP:8090` で確認）
 - [ ] バックアップが /srv/backups にでき、tar の中に xattr が入っている
       （`tar --xattrs -tvf` か、復元テストで `getfattr -d`）
