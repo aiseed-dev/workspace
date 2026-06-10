@@ -1,0 +1,28 @@
+[project]
+name = "kura"
+version = "0.1.0"
+description = "蔵 (aiseed workspace) — 自前で持てる Workspace のコア実装"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "httpx>=0.27",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+# 配布物はテスト済みバージョンに固定（spec 4.5）。開発では最新安定版に追随して更新する
+front = ["flet==0.85.3"]
+
+[project.scripts]
+kura = "kura.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
