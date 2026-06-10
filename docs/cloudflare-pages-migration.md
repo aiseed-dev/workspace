@@ -25,7 +25,9 @@ npm は使わない。**pip も venv も手で触らない**——デプロイ�
 自分の隣へ `.venv` を作り、必要な二つのパッケージ（httpx・blake3）を入れて使う。
 （いまの Debian/Ubuntu はシステムの pip へ直接インストールできない仕様
 〔externally-managed-environment〕なので、ここが普通の人の最初の壁になる。
-壁ごとスクリプトに埋めてある。`.venv` は **.gitignore に入れること**。）
+壁ごとスクリプトに埋めてある。`.venv` は **.gitignore に入れること**。
+スクリプトが裏でやっていることの中身を知りたい人は
+[docs/python-howto.md](python-howto.md)——5 分で読める三行の型。）
 
 必要な準備は API トークンだけ（ブラウザで一度だけ）：
 
