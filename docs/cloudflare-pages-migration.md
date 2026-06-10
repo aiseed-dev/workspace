@@ -1,135 +1,104 @@
 # Cloudflare Pages 移行マニュアル — aiseed.dev / timej.net
 
 静的サイト 2 つを、自宅サーバーから Cloudflare Pages へ移す手順。
-前提：両ドメインのネームサーバーは既に Cloudflare。サイトは静的（HTML/CSS/JS のみ）。
+
+前提：
+
+- 両ドメインのネームサーバーは既に Cloudflare
+- HTML は **Python のスクリプトで生成**している（生成物は .gitignore 済み）
+- デプロイは **wrangler の直接アップロード**（Git 連携は使わない）
 
 目的：サイトをサーバーから切り離し、サーバーを Debian にクリーンインストールして
 蔵（aiseed workspace）/ DocSpace 専用にする。サイトのダウンタイムはゼロにする。
 
+所要時間の目安：**準備〜切り替えまで 1 サイトあたり 30 分程度**。
+DNS の切り替え自体は数分で済む（ネームサーバーが既に Cloudflare のため）。
+
 > 注意：Cloudflare の管理画面の文言・配置は変わることがある（本書は 2026-06 時点）。
-> 新規作成の入口が「Workers & Pages」に統合されているが、静的サイトなら Pages で足りる。
 
 ---
 
-## 0. 方式を選ぶ
+## 1. 準備（一度だけ）
 
-| | A. Git 連携（推奨） | B. 直接アップロード（wrangler） |
-|---|---|---|
-| デプロイ | git push だけで自動 | `wrangler pages deploy` を手で実行 |
-| 必要なもの | GitHub（等）のリポジトリ | Node.js + wrangler CLI |
-| 履歴・ロールバック | コミット履歴 = デプロイ履歴。管理画面から旧版に戻せる | デプロイ履歴は残るがソースの正本は手元だけ |
-| .gitignore の影響 | **受ける**（下記 0.1） | 受けない（手元のファイルをそのまま上げる） |
-
-**推奨は A**。ソースの正本が git に残ること自体が退路（任意のホストへ移れる）になる。
-
-### 0.1 「html を .gitignore に入れている」問題
-
-Git 連携はリポジトリの中身を配信する。HTML が ignore されていれば**サイトは空になる**。
-自分のサイトがどれに当たるかで対処を選ぶ：
-
-| サイトの作り | 対処 |
-|---|---|
-| HTML が手書きの正本 | `.gitignore` から `*.html` を外してコミットする。正本が git 管理外なのはバックアップとしても危ういので、この機会に入れる |
-| HTML を生成している（SSG・スクリプト） | ソースだけコミットし、Pages のビルドコマンドに生成コマンドを設定（手順 A-3）。生成物は ignore のままでよい |
-| どうしても git に入れたくない | 方式 B（直接アップロード）にする |
-
-確認コマンド：
+Node.js が入った PC で：
 
 ```sh
-cd サイトのリポジトリ
-git check-ignore -v index.html   # ignore の出どころを表示
-git ls-files | grep -c '\.html$' # 追跡中の html の数（0 なら入っていない）
+npm install -g wrangler
+wrangler login          # ブラウザが開くので Cloudflare アカウントで認可
 ```
 
-外す場合：
+直接アップロードは .gitignore の影響を受けない（手元のディレクトリをそのまま上げる）ので、
+生成 HTML は ignore のままでよい。**ただし生成スクリプトと素材（Python・テンプレート・
+画像等の正本）は git に置いて守ること**——これが退路の担保になる。
+
+## 2. プロジェクト作成と初回デプロイ
+
+サイトごとに 1 プロジェクト。例として aiseed.dev：
 
 ```sh
-# .gitignore から該当行（*.html など）を削除してから
-git add -A && git commit -m "HTML をリポジトリに含める（Pages 移行のため）"
+cd aiseed.dev のソース
+python3 build.py                # いつもの生成コマンド（実際の名前に読み替え）
+
+wrangler pages project create aiseed-dev
+wrangler pages deploy ./出力ディレクトリ --project-name aiseed-dev
 ```
 
----
+終わると `https://aiseed-dev.pages.dev` のような確認用 URL が表示される。
+timej.net も同様に（例：`--project-name timej-net`）。
 
-## 1. 準備：サイトをリポジトリにする（方式 A）
+## 3. 確認（DNS を触る前に）
 
-サイトごとに 1 リポジトリ（例：`aiseed-dev/aiseed.dev-site`、`aiseed-dev/timej.net-site`）。
+`https://aiseed-dev.pages.dev` を開き、全ページ・リンク・画像・文字化けを確認する。
+**この時点では本番 DNS は無変更**。旧サーバーも動いたまま。納得いくまでやり直せる。
 
-```sh
-# 旧サーバーで。公開ディレクトリを手元に取る（場所は nginx の root を確認）
-rsync -a サーバー:/var/www/aiseed.dev/ ./aiseed.dev-site/
-cd aiseed.dev-site
-git init && git add -A && git commit -m "現行サイトを取り込み"
-git remote add origin git@github.com:aiseed-dev/aiseed.dev-site.git
-git push -u origin main
-```
+## 4. カスタムドメインの割り当て（ここが切り替え）
 
-公開ディレクトリがリポジトリ直下でない場合（例：`public/` 配下）は、その構成のままでよい
-（手順 A-3 で出力ディレクトリに `public` を指定する）。
+Cloudflare ダッシュボード → Workers & Pages → プロジェクト →
+**Custom domains** → **Set up a custom domain** → `aiseed.dev` を入力。
 
-## 2. Pages プロジェクトを作る（方式 A）
-
-Cloudflare ダッシュボード → **Workers & Pages** → **Create** → **Pages** →
-**Connect to Git** → GitHub を認可 → リポジトリを選択。
-
-## 3. ビルド設定（A-3）
-
-| 項目 | 純静的（HTML をコミット） | 生成あり（例） |
-|---|---|---|
-| Framework preset | None | 使う SSG を選ぶ（なければ None） |
-| Build command | （空欄） | `python3 build.py` や `hugo` 等 |
-| Build output directory | `/`（リポジトリ直下）または `public` | 生成物の出力先 |
-
-Save and Deploy → 数十秒で `プロジェクト名.pages.dev` の URL が出る。
-
-## 4. 確認（DNS を触る前に）
-
-`https://プロジェクト名.pages.dev` を開き、全ページ・リンク・画像を確認する。
-**この時点では本番 DNS は無変更**。旧サーバーも動いたまま。
-
-## 5. カスタムドメインの割り当てと DNS
-
-Pages プロジェクト → **Custom domains** → **Set up a custom domain** → `aiseed.dev` を入力。
-
-- ネームサーバーが既に Cloudflare なので、**必要な DNS レコード（CNAME）は自動で作成・
-  置き換えされる**。既存の A レコード（旧サーバーの IP）は Pages 用 CNAME に置き換わる
-  （確認画面が出る）。apex ドメインも CNAME flattening で問題ない
-- `www.aiseed.dev` も使っているなら、www も Custom domains に追加（apex への
-  リダイレクトは Bulk Redirects か、www を追加して同じ内容を配信でもよい）
+- ネームサーバーが既に Cloudflare なので、**DNS レコードは自動で書き換わる**
+  （旧サーバー向けの A レコード → Pages 向け CNAME。確認画面が出る）
+- 反映は実質数分。旧レコードがプロキシ（オレンジ雲）だったなら事実上瞬時。
+  DNS-only（灰色雲）だった場合も、世界のキャッシュに残るのは旧 TTL（通常 300 秒）まで
+- `www.aiseed.dev` も使っているなら www も Custom domains に追加
+- `.dev` は HTTPS 必須だが、証明書は自動発行されるので何もしなくてよい
 - timej.net も同様に繰り返す
 
-反映は通常数分。`.dev` は HTTPS 必須だが、Pages は証明書を自動発行するので何もしなくてよい。
-
-## 6. 切り替え後の確認と片付け
+切り替え確認：
 
 ```sh
-# 新しい配信元の確認（cloudflare が返るはず）
-curl -sI https://aiseed.dev | grep -i server
-dig aiseed.dev +short   # Cloudflare の IP（プロキシ）に変わっている
+dig aiseed.dev +short            # Cloudflare の IP に変わっている
+curl -sI https://aiseed.dev | head -5
 ```
 
-- 数日問題なければ、旧サーバーの nginx のサイト設定を止める
-- **これでサーバーとサイトが無関係になった。Debian クリーンインストールへ進める**
+## 5. 片付け（当日でよい）
 
-## 7. 以後の更新
+DNS がもう旧サーバーを指していないので、4 の確認が済んだら旧 nginx は当日止めてよい。
+心配なら設定を消さず `systemctl stop nginx` に留めておく（戻す手段にはならないが気休めに）。
+本当の戻し先は Pages のロールバック（Deployments から旧デプロイに一発）か、
+旧 A レコードを手で戻すこと——どちらも数分で済む。
 
-- 方式 A：リポジトリを直して `git push` → 自動デプロイ（main 以外のブランチは
-  プレビュー URL が出るので、確認してからマージできる）
-- ロールバック：Pages の Deployments から旧デプロイを「Rollback」一発
+**これでサーバーとサイトが無関係になった。Debian クリーンインストールへ進める。**
 
-## 付録：方式 B（直接アップロード）
+## 6. 以後の更新
 
 ```sh
-npm install -g wrangler        # 初回のみ
-wrangler login                 # ブラウザで認可
-wrangler pages project create aiseed-dev-site
-wrangler pages deploy ./公開ディレクトリ --project-name aiseed-dev-site
+python3 build.py
+wrangler pages deploy ./出力ディレクトリ --project-name aiseed-dev
 ```
 
-以後の更新も `wrangler pages deploy` を打つだけ。カスタムドメインは手順 5 と同じ。
-.gitignore の影響は受けないが、ソースの正本と履歴は自分で守ること。
+二行で済む。サイトごとにシェルスクリプト（`deploy.sh`）にしておくと間違いがない：
+
+```sh
+#!/bin/sh
+set -eu
+python3 build.py
+wrangler pages deploy ./出力ディレクトリ --project-name aiseed-dev
+```
 
 ## 退路
 
-ソース（または生成前の正本）が git にある限り、Cloudflare をやめる日は
-「同じファイルを別のホスト（自前 nginx・GitHub Pages 等）に置き、DNS を向け直す」一手で済む。
-保存形式（静的ファイル）がベンダー非依存であることが退路を担保する——蔵の設計原則と同じ。
+生成スクリプトと素材が git にある限り、Cloudflare をやめる日は
+「生成して別のホスト（自前 nginx・GitHub Pages 等）に置き、DNS を向け直す」一手で済む。
+保存形式（静的ファイル）と生成手段（自分の Python）がベンダー非依存であることが
+退路を担保する——蔵の設計原則と同じ。
