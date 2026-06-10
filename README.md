@@ -1,6 +1,8 @@
 # 蔵（aiseed workspace）
 
 Microsoft 365 / Google Workspace の代わりを、自前で持つ。握られず、現場で動かす。
+中小企業やグループの真剣な業務利用が対象。当面の設計目標は 1 台あたり 〜100 人で、
+それを超える需要には台を分けて応える（現場分散）。
 
 設計は [docs/aiseed-workspace-spec.md](docs/aiseed-workspace-spec.md)（v3.1）を参照。
 権限の正はディレクトリの xattr、グループはファイル、認証は PocketBase（差し替え式）、

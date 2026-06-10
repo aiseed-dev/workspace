@@ -12,15 +12,18 @@ Ubuntu 24.04 のサーバーを Debian にクリーンインストールし、�
   根拠：グローバル IPv4 がある・招待で利用者を増やす（VPN 必須にできない）・
   Tunnel はエッジで TLS 終端＝中身を見られる上に無料プランは 100MB/リクエスト上限
 - OS は **Debian 安定版**、ファイルシステムは**標準の ext4 のまま**（spec 7 章）
-- リバースプロキシは **Caddy**（証明書の取得・更新が自動で設定 2 行。最小依存）
+- リバースプロキシは **Caddy か nginx のどちらでもよい**（手順 8 に両方の設定を載せた）。
+  目安：ゼロから立てるなら Caddy（証明書まわりが全自動で設定が短い）、
+  既存の nginx 資産（他サイトの設定・運用経験）を持ち込むなら nginx + certbot
+  （certbot も今は `--nginx` 一発で取得から自動更新まで済む）
 - PocketBase は **localhost のみ**で待ち受け、外に出さない（ログインも検証も
   サーバー側 Python が叩くため、外部公開が不要）
-- インターネットに公開するポートは **80/443（Caddy）だけ**。SSH は LAN からのみ
+- インターネットに公開するポートは **80/443（リバースプロキシ）だけ**。SSH は LAN からのみ
   （外から管理が要るようになったら、管理者専用に WireGuard / Tailscale を足す。
   利用者に VPN を求めない方針と矛盾しない——使うのは管理者一人）
 
 ```
-インターネット ──443──▶ Caddy（TLS 終端）
+インターネット ──443──▶ リバースプロキシ（Caddy または nginx、TLS 終端）
                           ├─ /api/* /share/* /feed/* ──▶ kura serve   (127.0.0.1:8400)
                           └─ それ以外（画面）       ──▶ kura front   (127.0.0.1:8500)
                                                               │ どちらも localhost で
@@ -51,7 +54,12 @@ ls /var/www /home /etc/nginx/sites-enabled
 ## 3. 基礎固め（OS root で）
 
 ```sh
-apt update && apt install -y caddy python3-venv rsync curl unzip ufw unattended-upgrades
+# 共通
+apt update && apt install -y python3-venv rsync curl unzip ufw unattended-upgrades
+
+# リバースプロキシはどちらか一方：
+apt install -y caddy                              # A. Caddy の場合
+apt install -y nginx certbot python3-certbot-nginx  # B. nginx の場合
 
 # ファイアウォール：HTTP/HTTPS は全開、SSH は LAN からのみ
 # （LAN のサブネットは自分の環境に読み替え。ip a で確認）
@@ -158,12 +166,18 @@ sudo -u workspace /opt/kura/venv/bin/kura init \
 sudo -u workspace /opt/kura/venv/bin/kura fscheck --data-root /srv/workspace
 ```
 
-## 8. DNS と Caddy（ここで外に出る）
+## 8. DNS とリバースプロキシ（ここで外に出る）
 
-Cloudflare ダッシュボード → aiseed.dev の DNS → レコード追加：
+まず DNS。Cloudflare ダッシュボード → aiseed.dev の DNS → レコード追加：
 
 - Type `A`、Name `kura`、IPv4 = サーバーのグローバル IP、**Proxy status は DNS only（灰色雲）**
   ——オレンジ雲にすると Cloudflare が TLS を終端して中身を見られる。ここは必ず灰色
+
+次にリバースプロキシを A / B どちらかで。注意点は二つだけで、どちらの場合も同じ：
+**フロント（Flet）は WebSocket を使う**こと、**ファイル共有なのでアップロード上限を
+広げる**こと（nginx の既定 1MB のままだと大きいファイルで 413 になる）。
+
+### 8-A. Caddy の場合
 
 `/etc/caddy/Caddyfile`：
 
@@ -182,13 +196,67 @@ kura.aiseed.dev {
         reverse_proxy 127.0.0.1:8500
     }
 }
+
+# 他のサイトを足すときはブロックを並べるだけ（証明書もサイトごとに自動）：
+# example.jp {
+#     root * /srv/www/example.jp
+#     file_server
+# }
 ```
 
 ```sh
 systemctl reload caddy
-# 証明書は Caddy が Let's Encrypt から自動取得・自動更新する。何もしなくてよい
+# 証明書は Let's Encrypt から自動取得・自動更新。WebSocket も自動対応。何もしなくてよい
+# アップロード上限は Caddy には既定で存在しない
 curl -sI https://kura.aiseed.dev | head -3
 ```
+
+### 8-B. nginx + certbot の場合
+
+`/etc/nginx/sites-available/kura.aiseed.dev`：
+
+```nginx
+server {
+    listen 80;
+    server_name kura.aiseed.dev;
+
+    # ファイル共有なのでアップロード上限を広げる（既定 1MB のままにしない）
+    client_max_body_size 4g;
+
+    location ~ ^/(api|share|feed)/ {
+        proxy_pass http://127.0.0.1:8400;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8500;
+        # フロント（Flet）は WebSocket。この三行がないと画面が動かない
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 1h;   # WebSocket をアイドルで切らない
+    }
+}
+```
+
+```sh
+ln -s /etc/nginx/sites-available/kura.aiseed.dev /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+
+# 証明書：取得・443 化・自動更新（systemd タイマー）まで一発
+certbot --nginx -d kura.aiseed.dev
+
+curl -sI https://kura.aiseed.dev | head -3
+```
+
+他のサイトを足すときは sites-available に server ブロックを足して
+`certbot --nginx -d そのドメイン` を繰り返す。既存サーバーから持ち込む設定は
+sites-available へコピーして同様に。
 
 ルーターで 80/443 **だけ**をこのサーバーへポートフォワードしておくこと
 （80 は証明書の取得・更新と HTTPS への転送に使う）。**22（SSH）は転送しない**——
@@ -214,7 +282,7 @@ xattr はアーカイブ内に保全済みなので、tar.gz の転送は普通�
 - 規模の限界はこの一台の回線（特に上り帯域）と資源。spec の思想は一台のスケールアップ
   ではなく**現場分散**——組織や用途が分かれたら台を分けて、招待・共有リンクでまたぐ
 - DocSpace / ONLYOFFICE Docs を同じ台に載せる場合は別サブドメイン
-  （docspace.aiseed.dev 等）を同様に A レコード + Caddy で足す。手順は別途
+  （docspace.aiseed.dev 等）を同様に A レコード + リバースプロキシで足す。手順は別途
 
 ## 11. セキュリティ：リスク評価とメール IP の保全
 
@@ -224,7 +292,7 @@ xattr はアーカイブ内に保全済みなので、tar.gz の転送は普通�
 
 | 経路 | 評価 |
 |---|---|
-| Caddy 自体 | TLS と HTTP の解析部分。Go 製でメモリ安全、脆弱性の実績も少ない。unattended-upgrades で自動更新され、現実的なリスクは小 |
+| リバースプロキシ自体（Caddy / nginx） | TLS と HTTP の解析部分。どちらも実績が長く、unattended-upgrades で自動更新され、現実的なリスクは小 |
 | kura（自作部分） | **最大のリスク源**。API は全エンドポイント認証必須（例外の `/share` `/feed` はトークン自体が権限）、パス安全対策済み。それでも自作コードであることは変わらない——更新を取り込み続けること |
 | PocketBase ほか内部サービス | localhost のみで外から届かない。ログイン総当たりは PB のレート制限で抑える |
 | 背景ノイズ | ボットのスキャン（wp-login.php 探し等）は開けた日から毎日来るが、404 が返るだけ。ログが汚れる以上の実害なし |
