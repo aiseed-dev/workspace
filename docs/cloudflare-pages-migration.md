@@ -112,9 +112,29 @@ python3 build.py
 python3 cloudflare_pages_deploy.py ./出力ディレクトリ --project aiseed-dev
 ```
 
-（API トークンを毎回 export したくなければ、`~/.profile` か direnv 等で環境変数を
-設定しておく。トークンは Pages 編集権限しか持たないので、漏れたときの被害も
-Pages の書き換えに限定される——とはいえ git にはコミットしないこと。）
+トークンの置き場所は**ホーム側の専用ファイル**にする（プロジェクト内の .env は、
+git へのコミット事故と公開ディレクトリへの混入という二つの事故経路を持つ。
+リポジトリと公開ツリーの外に置けば、どちらも構造的に起きない）：
+
+```sh
+mkdir -p ~/.config/cloudflare
+cat > ~/.config/cloudflare/pages.env <<'EOF'
+CLOUDFLARE_API_TOKEN=トークン
+CLOUDFLARE_ACCOUNT_ID=アカウントID
+EOF
+chmod 600 ~/.config/cloudflare/pages.env
+```
+
+deploy.sh の先頭で明示的に読む（`~/.profile` での export は全プロセスに
+トークンが渡るので避ける）：
+
+```sh
+#!/bin/sh
+set -eu
+set -a; . "$HOME/.config/cloudflare/pages.env"; set +a
+python3 build.py
+python3 cloudflare_pages_deploy.py ./出力ディレクトリ --project aiseed-dev
+```
 
 ## 退路
 
