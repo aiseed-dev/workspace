@@ -67,6 +67,7 @@ curl -H 'Authorization: Bearer tok1' http://127.0.0.1:8400/api/me
 - [x] 3. API の口（トークン検証は差し替え式、標準は PocketBase introspection + キャッシュ）
 - [ ] 4. ファイル共有のフロント（Flet 0.85 系・宣言的スタイル）
 - [ ] 5. ONLYOFFICE Docs 連携（JWT・保存コールバック・document key）
-- [ ] 6. カレンダー（.ics + ICS 購読フィード）
+- [x] 6. カレンダーのバックエンド（イベント＝.ics は既存のファイル API で読み書き、
+      購読フィード `/feed/{token}.ics` は共有リンクに畳んだ認可）。予定の UI は 4. と一緒に
 
 バックアップは `scripts/backup.sh`（xattr を落とさない tar、PB データ込み）。

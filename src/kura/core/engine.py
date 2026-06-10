@@ -197,6 +197,19 @@ class Engine:
             raise NotFound("対象が消えている")
         return p, link
 
+    def ics_feed(self, token: str) -> tuple[str, str]:
+        """共有リンク（対象＝カレンダーのディレクトリ）から ICS 購読フィードを生成する。
+        購読クライアントはヘッダ認証ができないため、認可は URL 内トークン＝リンクが担う。"""
+        from .ics import merge_feed
+
+        p, _link = self.open_link(token)
+        if not p.is_dir():
+            raise NotFound("カレンダーはディレクトリ")
+        texts = [f.read_text(encoding="utf-8")
+                 for f in sorted(p.iterdir())
+                 if f.is_file() and f.suffix == ".ics"]
+        return p.name, merge_feed(p.name, texts)
+
     # --- 初期化（CLI から）---
 
     def init_root(self, admin_user_id: str) -> None:

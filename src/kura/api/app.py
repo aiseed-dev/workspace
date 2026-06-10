@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ..auth.base import Identity, TokenVerifier
 from ..core.engine import Engine
@@ -159,5 +159,21 @@ def create_app(engine: Engine, verifier: TokenVerifier) -> FastAPI:
         if p.is_dir():
             raise HTTPException(501, "ディレクトリ共有の閲覧 UI は未実装")
         return FileResponse(Path(p), filename=p.name)
+
+    # --- ICS 購読フィード（spec 4.6。認可は URL 内トークン＝共有リンク）---
+
+    @app.get("/feed/{token}.ics")
+    def ics_feed(token: str):
+        from urllib.parse import quote
+
+        name, body = engine.ics_feed(token)
+        # HTTP ヘッダは latin-1 のみ。日本語名は RFC 5987 の filename* で渡す
+        disposition = (f"inline; filename=\"calendar.ics\"; "
+                       f"filename*=UTF-8''{quote(name)}.ics")
+        return Response(
+            content=body,
+            media_type="text/calendar; charset=utf-8",
+            headers={"Content-Disposition": disposition},
+        )
 
     return app
