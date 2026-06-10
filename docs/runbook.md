@@ -30,6 +30,7 @@
 | テストを回す | 手元 | `pytest` | [README](../README.md) |
 | PocketBase なしで動かす | 手元 | `kura serve --auth static --static-tokens トークン.json` | [README](../README.md) |
 | Python プログラム一般の動かし方 | — | venv の三行の型 | [python-howto.md](python-howto.md) |
+| 台帳ランチャー（コマンド・URL を即引く） | 手元 | `python3 scripts/daicho.py`（台帳は `~/.config/aiseed/daicho.json`） | [scripts/daicho.py](../scripts/daicho.py) |
 
 ## 決めごと（探さなくていいようにする規約）
 

@@ -5,6 +5,9 @@
 ## 毎度
 
 ```sh
+# 台帳ランチャー（これ自体を最速で引く道具）
+python3 scripts/daicho.py
+
 # サイト更新（それぞれのリポジトリで）
 python3 deploy.py                    # aiseed.dev / timej.net 共通
 
