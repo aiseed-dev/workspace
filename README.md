@@ -4,6 +4,7 @@ Microsoft 365 / Google Workspace の代わりを、自前で持つ。握られ�
 中小企業やグループの真剣な業務利用が対象。当面の設計目標は 1 台あたり 〜100 人で、
 それを超える需要には台を分けて応える（現場分散）。
 
+**やり方を探すときは [docs/runbook.md](docs/runbook.md)**（タスク → コマンドの一枚）。
 設計は [docs/aiseed-workspace-spec.md](docs/aiseed-workspace-spec.md)（v3.1）を参照。
 権限の正はディレクトリの xattr、グループはファイル、認証は PocketBase（差し替え式）、
 連携の口は FastAPI。権限のためのデータベースは持たない。
