@@ -37,6 +37,7 @@
 | PocketBase なしで動かす | 手元 | `kura serve --data-root /tmp/kura --auth static --static-tokens /tmp/tokens.json` | [README](../README.md) |
 | Python プログラム一般の動かし方 | — | venv の三行の型 | [python-howto.md](python-howto.md) |
 | 台帳ランチャー | 手元 | `python3 scripts/daicho.py`（この runbook を直接読む。写しの台帳は持たない） | [scripts/daicho.py](../scripts/daicho.py) |
+| 棚卸し（何を管理しているかの一覧） | 手元/サーバー | `python3 scripts/tanaoroshi.py`（現実を走査して生成。手で書く台帳は持たない） | [scripts/tanaoroshi.py](../scripts/tanaoroshi.py) |
 
 ## 場所と値
 
@@ -54,5 +55,6 @@
 - **置き場所は固定**：手順書は `docs/`、道具は `scripts/`、秘密はホームの `~/.config/`（chmod 600。リポジトリ・公開ディレクトリに置かない）
 - **DNS とポート**：蔵の A レコード・MX は必ず灰色雲（DNS only）。公開ポートは 80/443 のみ、22 は LAN のみ・転送しない、25 は出る方も止めてある
 - **計算の置き場所は三種類**：口（サーバー常駐）/ 働き手（サーバーのタイマー起動）/ 手元の道具（使うときだけ）。新しい仕組みを作るときは、まずどれかを決める
+- **説明はモノに貼る**：リポジトリは README の一行目、systemd は `Description=`、cron はコメント行。一覧（棚卸し）は走査で生成する——手で書いた管理台帳は腐る
 - **API を挟むのは境界を越えるときだけ**（別マシン・別人・別システム）。同じマシンで自分のデータを触る道具は直接アクセスでよい。ただし他人のデータの権限判定だけは常にコアエンジンを通す
 - **設計の理由を探すとき**は [aiseed-workspace-spec.md](aiseed-workspace-spec.md)。「なぜこうなっているか」は全部そこにある
