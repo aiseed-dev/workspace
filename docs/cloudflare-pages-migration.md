@@ -21,22 +21,34 @@ DNS の切り替え自体は数分で済む（ネームサーバーが既に Clo
 
 ## 1. 準備（一度だけ）
 
-npm は使わない。必要なのは Python と pip パッケージ二つ、それに API トークン：
+npm は使わない。**pip も venv も手で触らない**——デプロイスクリプトが初回起動時に
+自分の隣へ `.venv` を作り、必要な二つのパッケージ（httpx・blake3）を入れて使う。
+（いまの Debian/Ubuntu はシステムの pip へ直接インストールできない仕様
+〔externally-managed-environment〕なので、ここが普通の人の最初の壁になる。
+壁ごとスクリプトに埋めてある。`.venv` は **.gitignore に入れること**。
+スクリプトが裏でやっていることの中身を知りたい人は
+[docs/python-howto.md](python-howto.md)——5 分で読める三行の型。）
 
-```sh
-pip install httpx blake3
-```
-
-API トークンの作成（ブラウザで一度だけ）：
+必要な準備は API トークンだけ（ブラウザで一度だけ）：
 
 1. Cloudflare ダッシュボード → 右上のプロフィール → **My Profile → API Tokens → Create Token**
 2. テンプレート **「Cloudflare Pages を編集する（Edit Cloudflare Pages）」** を選んで作成
 3. 表示されたトークンと、アカウント ID（ダッシュボードのドメイン概要ページ右側に表示）を控える
 
+控えた二つは**ホーム側の専用ファイル**に置く（プロジェクト内の .env は、
+git へのコミット事故と公開ディレクトリへの混入という二つの事故経路を持つ。
+リポジトリと公開ツリーの外なら、どちらも構造的に起きない）：
+
 ```sh
-export CLOUDFLARE_API_TOKEN=控えたトークン
-export CLOUDFLARE_ACCOUNT_ID=アカウントID
+mkdir -p ~/.config/cloudflare
+cat > ~/.config/cloudflare/pages.env <<'EOF'
+CLOUDFLARE_API_TOKEN=トークン
+CLOUDFLARE_ACCOUNT_ID=アカウントID
+EOF
+chmod 600 ~/.config/cloudflare/pages.env
 ```
+
+デプロイスクリプトはこのファイルを**自動で読む**ので、export も .env も不要。
 
 直接アップロードは .gitignore の影響を受けない（手元のディレクトリをそのまま上げる）ので、
 生成 HTML は ignore のままでよい。**ただし生成スクリプトと素材（Python・テンプレート・
@@ -49,17 +61,28 @@ export CLOUDFLARE_ACCOUNT_ID=アカウントID
 
 ## 2. プロジェクト作成と初回デプロイ
 
-サイトごとに 1 プロジェクト。例として aiseed.dev：
+サイトごとに 1 プロジェクト。`cloudflare_pages_deploy.py` をサイトのリポジトリに
+コピーし、隣に `deploy.py` を置く（全部 Python。シェルは挟まない）：
+
+```python
+#!/usr/bin/env python3
+"""ビルドしてデプロイする。実行: python3 deploy.py"""
+import subprocess
+import sys
+
+from cloudflare_pages_deploy import deploy
+
+subprocess.run([sys.executable, "build.py"], check=True)  # いつもの生成コマンドに読み替え
+deploy("./出力ディレクトリ", project="aiseed-dev")
+```
 
 ```sh
 cd aiseed.dev のソース
-python3 build.py                # いつもの生成コマンド（実際の名前に読み替え）
-
-python3 cloudflare_pages_deploy.py ./出力ディレクトリ --project aiseed-dev --create
+python3 deploy.py
 ```
 
-終わると `https://aiseed-dev.pages.dev` のような確認用 URL が表示される。
-timej.net も同様に（例：`--project timej-net`）。
+プロジェクトがなければ自動で作られ、終わると `https://aiseed-dev.pages.dev` の
+ような確認用 URL が表示される。timej.net も同様に（`project="timej-net"`）。
 二回目以降は変更のあったファイルだけが送られる（中身のハッシュで差分判定）。
 
 ## 3. 確認（DNS を触る前に）
@@ -99,22 +122,22 @@ DNS がもう旧サーバーを指していないので、4 の確認が済ん�
 ## 6. 以後の更新
 
 ```sh
-python3 build.py
-python3 cloudflare_pages_deploy.py ./出力ディレクトリ --project aiseed-dev
+python3 deploy.py
 ```
 
-二行で済む。サイトごとにシェルスクリプト（`deploy.sh`）にしておくと間違いがない：
+一行で済む。生成 → 差分アップロードまで全部やる。
+単発でコマンドラインから使うこともできる：
 
 ```sh
-#!/bin/sh
-set -eu
-python3 build.py
 python3 cloudflare_pages_deploy.py ./出力ディレクトリ --project aiseed-dev
 ```
 
-（API トークンを毎回 export したくなければ、`~/.profile` か direnv 等で環境変数を
-設定しておく。トークンは Pages 編集権限しか持たないので、漏れたときの被害も
-Pages の書き換えに限定される——とはいえ git にはコミットしないこと。）
+## サーバーは登場しない
+
+このデプロイは**手元の PC と Cloudflare の二者間で完結する**。サーバーには何も置かず、
+トークンも渡さない——公開サーバーが侵害されてもサイトの改竄には繋がらず、
+サーバーが停止していてもサイトの更新はできる。サーバーを経由させるのは、
+常駐（口）か共有（働き手）が必要な仕事だけでよい。
 
 ## 退路
 
